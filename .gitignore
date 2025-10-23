@@ -69,3 +69,5 @@ logs/
 # Temporary files
 *.tmp
 *.bak
+
+README.md
