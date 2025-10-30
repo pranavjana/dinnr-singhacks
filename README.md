@@ -43,6 +43,16 @@
 
 ---
 
+## Provided Resources
+
+### 1) `transactions_mock_1000_for_participants.csv` — **Part 1: Real-Time AML Monitoring**
+A synthetic set of 1,000 transactions (jurisdiction, regulator, amounts, screening flags, SWIFT fields, etc.).  
+Use it to prototype your rules engine, compute risk scores, and generate role-based alerts (Front/Compliance/Legal).
+
+### 2) `Swiss_Home_Purchase_Agreement_Scanned_Noise_forparticipants.pdf` — **Part 2: Document & Image Corroboration**
+A scanned client corroboration document for OCR and validation.  
+Use it to extract fields, check formatting/consistency (amounts, dates, annexes, IDs), and produce a document risk score + findings list.
+
 ## 🎯 What You're Building
 
 Two agentic AI-driven AML solutions that work together:
