@@ -43,7 +43,6 @@
 
 ---
 
-<<<<<<< HEAD
 ## Provided Resources
 
 ### 1) `transactions_mock_1000_for_participants.csv` — **Part 1: Real-Time AML Monitoring**
@@ -54,8 +53,6 @@ Use it to prototype your rules engine, compute risk scores, and generate role-ba
 A scanned client corroboration document for OCR and validation.  
 Use it to extract fields, check formatting/consistency (amounts, dates, annexes, IDs), and produce a document risk score + findings list.
 
-=======
->>>>>>> dec5451 (Update README.md)
 ## 🎯 What You're Building
 
 Two agentic AI-driven AML solutions that work together:
