@@ -1,0 +1,235 @@
+{
+  "$defs": {
+    "Category": {
+      "description": "Document source category from MAS website.",
+      "enum": [
+        "News",
+        "Circular",
+        "Regulation"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "CrawlSession": {
+      "description": "Metadata and summary of a single crawl execution.",
+      "properties": {
+        "session_id": {
+          "description": "Unique identifier (UUID or timestamp-based) for this crawl session",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "start_time": {
+          "description": "ISO-8601 timestamp when crawl started (UTC)",
+          "format": "date-time",
+          "title": "Start Time",
+          "type": "string"
+        },
+        "end_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO-8601 timestamp when crawl completed (UTC). None if in progress.",
+          "title": "End Time"
+        },
+        "duration_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Total execution time in seconds. Calculated as end_time - start_time.",
+          "title": "Duration Seconds"
+        },
+        "documents_found": {
+          "default": 0,
+          "description": "Total unique documents discovered on MAS website (before dedup)",
+          "minimum": 0,
+          "title": "Documents Found",
+          "type": "integer"
+        },
+        "documents_downloaded": {
+          "default": 0,
+          "description": "Number of PDFs successfully downloaded",
+          "minimum": 0,
+          "title": "Documents Downloaded",
+          "type": "integer"
+        },
+        "documents_skipped": {
+          "default": 0,
+          "description": "Documents skipped (duplicates, robots.txt, missing fields, etc.)",
+          "minimum": 0,
+          "title": "Documents Skipped",
+          "type": "integer"
+        },
+        "errors_encountered": {
+          "default": 0,
+          "description": "Count of non-fatal errors (retries, missing fields, broken links)",
+          "minimum": 0,
+          "title": "Errors Encountered",
+          "type": "integer"
+        },
+        "errors_details": {
+          "description": "Log entries for errors (up to 100 most recent; summary of issues)",
+          "items": {
+            "type": "string"
+          },
+          "title": "Errors Details",
+          "type": "array"
+        },
+        "success": {
+          "default": false,
+          "description": "True if crawl completed without fatal errors; False if halted early",
+          "title": "Success",
+          "type": "boolean"
+        },
+        "crawl_config": {
+          "additionalProperties": true,
+          "description": "Configuration used for crawl (days_back, download_dir, retry_policy, etc.)",
+          "title": "Crawl Config",
+          "type": "object"
+        }
+      },
+      "required": [
+        "session_id",
+        "start_time"
+      ],
+      "title": "CrawlSession",
+      "type": "object"
+    },
+    "Document": {
+      "description": "Single MAS AML/CFT document metadata.",
+      "properties": {
+        "title": {
+          "description": "Document title as displayed on MAS website",
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "publication_date": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO-8601 publication date (UTC). None if not found on page.",
+          "title": "Publication Date"
+        },
+        "category": {
+          "$ref": "#/$defs/Category",
+          "description": "Source section: News, Circular, or Regulation"
+        },
+        "source_url": {
+          "description": "Direct link to document on MAS website",
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "title": "Source Url",
+          "type": "string"
+        },
+        "normalized_url": {
+          "description": "Normalized source_url (query params/fragments removed) for deduplication",
+          "title": "Normalized Url",
+          "type": "string"
+        },
+        "downloaded_pdf_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Local filesystem path to downloaded PDF. None if download failed or unavailable.",
+          "title": "Downloaded Pdf Path"
+        },
+        "file_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SHA-256 hash of downloaded PDF (lowercase hex string). None if PDF not downloaded.",
+          "title": "File Hash"
+        },
+        "download_timestamp": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO-8601 timestamp when PDF was successfully downloaded (UTC). None if not downloaded.",
+          "title": "Download Timestamp"
+        },
+        "data_quality_notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional: Free-text notes on data completeness",
+          "title": "Data Quality Notes"
+        }
+      },
+      "required": [
+        "title",
+        "category",
+        "source_url",
+        "normalized_url"
+      ],
+      "title": "Document",
+      "type": "object"
+    }
+  },
+  "description": "Complete output of a crawl session: metadata + documents.",
+  "properties": {
+    "session": {
+      "$ref": "#/$defs/CrawlSession",
+      "description": "Crawl execution metadata and summary statistics"
+    },
+    "documents": {
+      "description": "Array of documents discovered and processed in this crawl",
+      "items": {
+        "$ref": "#/$defs/Document"
+      },
+      "title": "Documents",
+      "type": "array"
+    }
+  },
+  "required": [
+    "session"
+  ],
+  "title": "CrawlResult",
+  "type": "object"
+}

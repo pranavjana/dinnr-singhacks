@@ -1,0 +1,18 @@
+# Core dependencies for MAS AML/CFT Document Crawler
+requests==2.31.0
+beautifulsoup4==4.12.2
+pydantic==2.5.0
+python-dateutil==2.8.2
+
+# Testing dependencies
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+
+# FastAPI dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Development tools
+ruff==0.1.6
+mypy==1.7.0

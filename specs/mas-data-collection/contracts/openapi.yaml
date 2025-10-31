@@ -1,0 +1,332 @@
+openapi: 3.0.0
+info:
+  title: MAS AML/CFT Document Crawler API
+  description: >
+    Web scraper for the Monetary Authority of Singapore (MAS) regulatory website.
+    Collects AML/CFT-related documents (News, Circulars, Regulation pages) from
+    the last 90 days, downloads associated PDFs, deduplicates by normalized URL
+    + file hash, and returns structured JSON metadata optimized for downstream
+    LLM analysis.
+  version: 1.0.0
+  contact:
+    name: DINNR AML Platform Team
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+  - url: https://api.mas-crawler.example.com
+    description: Production server (TBD)
+
+paths:
+  /api/v1/crawl:
+    post:
+      summary: Trigger a new crawl of MAS website
+      description: >
+        Initiates a crawl of the MAS News, Circulars, and Regulation pages.
+        Downloads PDFs, deduplicates documents, and returns structured metadata
+        suitable for LLM processing. Crawl executes synchronously (blocking).
+      operationId: triggerCrawl
+      tags:
+        - Crawler
+      requestBody:
+        description: Crawl configuration parameters
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrawlRequest'
+      responses:
+        '200':
+          description: Crawl completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrawlResult'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error (crawl aborted)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/crawl/status/{session_id}:
+    get:
+      summary: Get status of a crawl session
+      description: Retrieve metadata and summary of a specific crawl session (Phase 2).
+      operationId: getCrawlStatus
+      tags:
+        - Crawler
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the crawl session
+      responses:
+        '200':
+          description: Crawl session metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrawlSession'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    CrawlRequest:
+      type: object
+      description: Parameters for crawl execution
+      properties:
+        days_back:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 90
+          description: Collect documents published within last N days
+        include_pdfs:
+          type: boolean
+          default: true
+          description: Download PDF files associated with documents
+        download_dir:
+          type: string
+          default: ./downloads
+          description: Local filesystem directory for PDF storage
+        max_pdf_size_mb:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 50
+          description: Skip PDFs larger than this threshold (MB)
+      example:
+        days_back: 90
+        include_pdfs: true
+        download_dir: ./downloads
+        max_pdf_size_mb: 50
+
+    Category:
+      type: string
+      enum:
+        - News
+        - Circular
+        - Regulation
+      description: Document source section on MAS website
+
+    Document:
+      type: object
+      description: Single AML/CFT-related document from MAS
+      required:
+        - title
+        - category
+        - source_url
+        - normalized_url
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Document title as displayed on MAS website
+        publication_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO-8601 publication date (UTC). Null if not found.
+        category:
+          $ref: '#/components/schemas/Category'
+        source_url:
+          type: string
+          format: uri
+          description: Direct link to document on MAS website
+        normalized_url:
+          type: string
+          description: Normalized source_url (query params/fragments removed) for deduplication
+        downloaded_pdf_path:
+          type: string
+          nullable: true
+          description: Local filesystem path to downloaded PDF. Null if download failed.
+        file_hash:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
+          nullable: true
+          description: SHA-256 hash of downloaded PDF (lowercase hex). Null if not downloaded.
+        download_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO-8601 timestamp when PDF was downloaded (UTC). Null if not downloaded.
+        data_quality_notes:
+          type: string
+          nullable: true
+          description: Free-text notes on data completeness (e.g., reason for null fields)
+      example:
+        title: "Notice on AML/CFT Requirements for Trade Finance"
+        publication_date: "2025-10-15T00:00:00Z"
+        category: "Circular"
+        source_url: "https://www.mas.gov.sg/news/media-releases/2025/notice-aml-cft"
+        normalized_url: "https://www.mas.gov.sg/news/media-releases/2025/notice-aml-cft"
+        downloaded_pdf_path: "./downloads/mas_circular_2025_10_15_aml_cft.pdf"
+        file_hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+        download_timestamp: "2025-11-01T14:35:50.456Z"
+        data_quality_notes: null
+
+    CrawlSession:
+      type: object
+      description: Metadata and summary of a crawl execution
+      required:
+        - session_id
+        - start_time
+      properties:
+        session_id:
+          type: string
+          description: Unique identifier (UUID or timestamp-based) for this crawl session
+        start_time:
+          type: string
+          format: date-time
+          description: ISO-8601 timestamp when crawl started (UTC)
+        end_time:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO-8601 timestamp when crawl completed (UTC). Null if in-progress.
+        duration_seconds:
+          type: number
+          minimum: 0
+          nullable: true
+          description: Total execution time in seconds. Calculated as end_time - start_time.
+        documents_found:
+          type: integer
+          minimum: 0
+          description: Total unique documents discovered on MAS website (before dedup)
+        documents_downloaded:
+          type: integer
+          minimum: 0
+          description: Number of PDFs successfully downloaded
+        documents_skipped:
+          type: integer
+          minimum: 0
+          description: Documents skipped (duplicates, robots.txt, missing fields, etc.)
+        errors_encountered:
+          type: integer
+          minimum: 0
+          description: Count of non-fatal errors (retries, missing fields, broken links)
+        errors_details:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+          description: Log entries for errors (up to 100 most recent)
+        success:
+          type: boolean
+          description: True if crawl completed without fatal errors
+        crawl_config:
+          type: object
+          description: Configuration snapshot used for this crawl
+          additionalProperties: true
+      example:
+        session_id: "crawl_20251101_143542"
+        start_time: "2025-11-01T14:35:42.000Z"
+        end_time: "2025-11-01T14:38:15.500Z"
+        duration_seconds: 153.5
+        documents_found: 28
+        documents_downloaded: 25
+        documents_skipped: 3
+        errors_encountered: 2
+        errors_details:
+          - "HTTP 404: Regulation page unavailable"
+          - "PDF timeout: max retries exceeded"
+        success: true
+        crawl_config:
+          days_back: 90
+          include_pdfs: true
+          download_dir: "./downloads"
+          max_pdf_size_mb: 50
+
+    CrawlResult:
+      type: object
+      description: Complete output of a crawl session (metadata + documents)
+      required:
+        - session
+        - documents
+      properties:
+        session:
+          $ref: '#/components/schemas/CrawlSession'
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+          description: Array of documents discovered and processed in this crawl
+      example:
+        session:
+          session_id: "crawl_20251101_143542"
+          start_time: "2025-11-01T14:35:42.000Z"
+          end_time: "2025-11-01T14:38:15.500Z"
+          duration_seconds: 153.5
+          documents_found: 28
+          documents_downloaded: 25
+          documents_skipped: 3
+          errors_encountered: 2
+          errors_details:
+            - "HTTP 404: Regulation page unavailable"
+            - "PDF timeout: max retries exceeded"
+          success: true
+          crawl_config:
+            days_back: 90
+            include_pdfs: true
+            download_dir: "./downloads"
+            max_pdf_size_mb: 50
+        documents:
+          - title: "Notice on AML/CFT Requirements for Trade Finance"
+            publication_date: "2025-10-15T00:00:00Z"
+            category: "Circular"
+            source_url: "https://www.mas.gov.sg/news/media-releases/2025/notice-aml-cft"
+            normalized_url: "https://www.mas.gov.sg/news/media-releases/2025/notice-aml-cft"
+            downloaded_pdf_path: "./downloads/mas_circular_2025_10_15_aml_cft.pdf"
+            file_hash: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            download_timestamp: "2025-11-01T14:35:50.456Z"
+            data_quality_notes: null
+
+    ErrorResponse:
+      type: object
+      description: Error response body
+      required:
+        - error
+        - status_code
+      properties:
+        error:
+          type: string
+          description: Error message
+        status_code:
+          type: integer
+          description: HTTP status code
+        details:
+          type: object
+          nullable: true
+          description: Additional error details (optional)
+      example:
+        error: "Invalid request parameters"
+        status_code: 400
+        details:
+          days_back: "Must be between 1 and 365"
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT authentication (Phase 2)
+
+# Security applied to all endpoints (Phase 2)
+# security:
+#   - bearerAuth: []

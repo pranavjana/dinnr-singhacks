@@ -1,6 +1,6 @@
 # DINNR AML Platform — Project Constitution
 
-<!-- Sync Impact Report (v1.0.0 → v1.1.0): Added Next.js best practices, LangGraph patterns, and shadcn/ui specification -->
+<!-- Sync Impact Report (v1.1.0 → v1.1.1): Specified Moonshot AI Kimi K2-0905 model via Groq API -->
 
 ## Core Principles
 
@@ -56,14 +56,14 @@ Next.js frontend must provide intuitive, role-specific dashboards with real-time
 
 **Frontend**: Next.js 14+, React 18+, TypeScript, TailwindCSS for styling, shadcn/ui for component library, Axios/SWR for API client, React Hook Form for form validation.
 **Backend**: FastAPI 0.100+, Python 3.11+, LangGraph 0.1+, Pydantic for schema validation, Langsmith for agent observability.
-**LLM Provider**: Groq (inference only; no fine-tuning or training).
+**LLM Provider**: Groq API with Moonshot AI Kimi K2-0905 model (inference only; no fine-tuning or training). Kimi K2-0905 selected for multilingual support, long-context reasoning (200K tokens), and compliance document analysis capabilities.
 **Database & Storage**: Supabase (PostgreSQL + S3-compatible storage for documents), with PostgREST for API layer.
 **Authentication**: Supabase Auth (OAuth2/JWT) with role-based access control; enforce scopes for frontend/backend separation.
 **Testing**: Pytest (backend), Vitest/Jest (frontend), Playwright/Cypress (e2e), integration tests for all critical workflows.
 **Deployment**: Docker containerization, environment-based config (dev/staging/prod).
 **Monitoring**: Structured logging (JSON), Prometheus metrics, Langsmith for agent tracing, optional APM (e.g., Datadog, NewRelic if budget available).
 
-**Prohibited Technologies**: Unencrypted storage, plaintext credentials in code, closed-source compliance logic, vendor lock-in beyond Groq, custom component libraries (use shadcn/ui), untyped code (TypeScript strict mode MANDATORY).
+**Prohibited Technologies**: Unencrypted storage, plaintext credentials in code, closed-source compliance logic, vendor lock-in beyond Groq/Kimi, custom component libraries (use shadcn/ui), untyped code (TypeScript strict mode MANDATORY), model switching without constitution amendment.
 
 ## Development Workflow & Testing Discipline
 
@@ -155,4 +155,4 @@ All PRs must include a checklist item: `- [ ] Verified compliance with Constitut
 
 ---
 
-**Version**: 1.1.0 | **Ratified**: 2025-11-01 | **Last Amended**: 2025-11-01
+**Version**: 1.1.1 | **Ratified**: 2025-11-01 | **Last Amended**: 2025-11-01

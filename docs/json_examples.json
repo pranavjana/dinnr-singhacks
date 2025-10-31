@@ -1,0 +1,70 @@
+{
+  "document": {
+    "title": "Notice on AML/CFT Requirements for Trade Finance",
+    "publication_date": "2025-10-15T00:00:00Z",
+    "category": "Circular",
+    "source_url": "https://www.mas.gov.sg/news/circular-001",
+    "normalized_url": "https://www.mas.gov.sg/news/circular-001",
+    "downloaded_pdf_path": "./downloads/circular_001.pdf",
+    "file_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "download_timestamp": "2025-11-01T14:35:50Z",
+    "data_quality_notes": null
+  },
+  "session": {
+    "session_id": "crawl_20251101_143542",
+    "start_time": "2025-11-01T14:35:42Z",
+    "end_time": "2025-11-01T14:38:15Z",
+    "duration_seconds": 153.5,
+    "documents_found": 28,
+    "documents_downloaded": 25,
+    "documents_skipped": 3,
+    "errors_encountered": 2,
+    "errors_details": [
+      "HTTP 404: Regulation page unavailable",
+      "PDF timeout: max retries exceeded"
+    ],
+    "success": true,
+    "crawl_config": {
+      "days_back": 90,
+      "include_pdfs": true,
+      "download_dir": "./downloads",
+      "max_pdf_size_mb": 50
+    }
+  },
+  "crawl_result": {
+    "session": {
+      "session_id": "crawl_20251101_143542",
+      "start_time": "2025-11-01T14:35:42Z",
+      "end_time": "2025-11-01T14:38:15Z",
+      "duration_seconds": 153.5,
+      "documents_found": 28,
+      "documents_downloaded": 25,
+      "documents_skipped": 3,
+      "errors_encountered": 2,
+      "errors_details": [
+        "HTTP 404: Regulation page unavailable",
+        "PDF timeout: max retries exceeded"
+      ],
+      "success": true,
+      "crawl_config": {
+        "days_back": 90,
+        "include_pdfs": true,
+        "download_dir": "./downloads",
+        "max_pdf_size_mb": 50
+      }
+    },
+    "documents": [
+      {
+        "title": "Notice on AML/CFT Requirements for Trade Finance",
+        "publication_date": "2025-10-15T00:00:00Z",
+        "category": "Circular",
+        "source_url": "https://www.mas.gov.sg/news/circular-001",
+        "normalized_url": "https://www.mas.gov.sg/news/circular-001",
+        "downloaded_pdf_path": "./downloads/circular_001.pdf",
+        "file_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "download_timestamp": "2025-11-01T14:35:50Z",
+        "data_quality_notes": null
+      }
+    ]
+  }
+}
