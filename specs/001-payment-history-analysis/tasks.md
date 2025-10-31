@@ -81,19 +81,19 @@
 
 ### Implementation for User Story 2
 
-- [ ] T019 [P] [US2] Create FlaggedTransaction and IdentifiedPattern models in backend/models/analysis_result.py per data-model.md
-- [ ] T020 [P] [US2] Create AnalysisResult model in backend/models/analysis_result.py with overall_risk_score, risk_category, flagged_transactions, identified_patterns, narrative_summary, analyzed_transaction_count, analysis_timestamp, error fields
-- [ ] T021 [P] [US2] Create RiskAnalysisState TypedDict in backend/agents/aml_monitoring/states.py with transactions, formatted_prompt, llm_raw_response, analysis_result, error fields
-- [ ] T022 [US2] Implement GrokClient class in backend/services/llm_client.py with async analyze_transactions() method: HTTP client for Grok Kimi 2 API, uses GROK_API_KEY from config, requests JSON mode output, implements retry logic with exponential backoff
-- [ ] T023 [US2] Implement format_data node function in backend/agents/aml_monitoring/risk_analyzer.py: transforms TransactionRecords to LLM-friendly JSON prompt with analysis instructions (FR-007)
-- [ ] T024 [US2] Implement call_llm node function in backend/agents/aml_monitoring/risk_analyzer.py: calls GrokClient.analyze_transactions(), handles exceptions for graceful degradation (FR-018)
-- [ ] T025 [US2] Implement parse_response node function in backend/agents/aml_monitoring/risk_analyzer.py: extracts structured JSON from LLM output, validates against AnalysisResult schema, handles malformed responses
-- [ ] T026 [US2] Implement handle_error node function in backend/agents/aml_monitoring/risk_analyzer.py: creates partial AnalysisResult with error field populated when LLM fails (FR-018)
-- [ ] T027 [US2] Create StateGraph workflow in backend/agents/aml_monitoring/risk_analyzer.py: connects format_data → call_llm → (conditional) parse_response or handle_error → END, add conditional edges based on LLM success/failure
-- [ ] T028 [US2] Create async run_risk_analysis() function in backend/agents/aml_monitoring/risk_analyzer.py: entry point that executes StateGraph with transaction list, returns AnalysisResult
-- [ ] T029 [US2] Implement /api/payment-history/analyze POST endpoint in backend/routers/payment_history.py: queries transactions via transaction_service, runs LangGraph risk analysis agent, returns AnalysisResult JSON (FR-014)
-- [ ] T030 [US2] Add LLM prompt engineering in format_data node: include instructions for identifying patterns per FR-009 (transaction frequency, amount patterns, high-risk jurisdictions, PEP involvement, sanctions hits, similar names)
-- [ ] T031 [US2] Add audit logging for analysis in risk_analyzer: log analysis requests, LLM call results, error states (FR-017)
+- [x] T019 [P] [US2] Create FlaggedTransaction and IdentifiedPattern models in backend/models/analysis_result.py per data-model.md
+- [x] T020 [P] [US2] Create AnalysisResult model in backend/models/analysis_result.py with overall_risk_score, risk_category, flagged_transactions, identified_patterns, narrative_summary, analyzed_transaction_count, analysis_timestamp, error fields
+- [x] T021 [P] [US2] Create RiskAnalysisState TypedDict in backend/agents/aml_monitoring/states.py with transactions, formatted_prompt, llm_raw_response, analysis_result, error fields
+- [x] T022 [US2] Implement GrokClient class in backend/services/llm_client.py with async analyze_transactions() method: HTTP client for Grok Kimi 2 API, uses GROK_API_KEY from config, requests JSON mode output, implements retry logic with exponential backoff
+- [x] T023 [US2] Implement format_data node function in backend/agents/aml_monitoring/risk_analyzer.py: transforms TransactionRecords to LLM-friendly JSON prompt with analysis instructions (FR-007)
+- [x] T024 [US2] Implement call_llm node function in backend/agents/aml_monitoring/risk_analyzer.py: calls GrokClient.analyze_transactions(), handles exceptions for graceful degradation (FR-018)
+- [x] T025 [US2] Implement parse_response node function in backend/agents/aml_monitoring/risk_analyzer.py: extracts structured JSON from LLM output, validates against AnalysisResult schema, handles malformed responses
+- [x] T026 [US2] Implement handle_error node function in backend/agents/aml_monitoring/risk_analyzer.py: creates partial AnalysisResult with error field populated when LLM fails (FR-018)
+- [x] T027 [US2] Create StateGraph workflow in backend/agents/aml_monitoring/risk_analyzer.py: connects format_data → call_llm → (conditional) parse_response or handle_error → END, add conditional edges based on LLM success/failure
+- [x] T028 [US2] Create async run_risk_analysis() function in backend/agents/aml_monitoring/risk_analyzer.py: entry point that executes StateGraph with transaction list, returns AnalysisResult
+- [x] T029 [US2] Implement /api/payment-history/analyze POST endpoint in backend/routers/payment_history.py: queries transactions via transaction_service, runs LangGraph risk analysis agent, returns AnalysisResult JSON (FR-014)
+- [x] T030 [US2] Add LLM prompt engineering in format_data node: include instructions for identifying patterns per FR-009 (transaction frequency, amount patterns, high-risk jurisdictions, PEP involvement, sanctions hits, similar names)
+- [x] T031 [US2] Add audit logging for analysis in risk_analyzer: log analysis requests, LLM call results, error states (FR-017)
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently - full query + analysis capability with graceful degradation
 

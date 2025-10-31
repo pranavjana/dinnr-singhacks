@@ -9,7 +9,9 @@ from fastapi import APIRouter, HTTPException, status
 
 from models.query_params import QueryParameters
 from models.transaction import PaymentHistory
+from models.analysis_result import AnalysisResult
 from services.transaction_service import transaction_service
+from agents.aml_monitoring.risk_analyzer import run_risk_analysis
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -82,4 +84,87 @@ async def query_payment_history(query: QueryParameters) -> PaymentHistory:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Query execution failed: {str(e)}",
+        )
+
+
+@router.post("/payment-history/analyze", response_model=AnalysisResult)
+async def analyze_payment_history(query: QueryParameters) -> AnalysisResult:
+    """
+    Query payment history and perform LLM-powered risk analysis.
+
+    Combines transaction retrieval with AI pattern detection and risk scoring.
+    Uses LangGraph workflow with graceful degradation (FR-018).
+
+    Args:
+        query: Search criteria (at least one field required)
+
+    Returns:
+        AnalysisResult with risk scores, flagged transactions, and patterns
+
+    Raises:
+        HTTPException 400: If no search parameters provided
+        HTTPException 404: If no transactions found to analyze
+        HTTPException 500: If query or analysis fails
+    """
+    try:
+        # Validate at least one filter provided
+        if not query.has_filters:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="At least one search parameter must be provided",
+            )
+
+        # Execute query to retrieve transactions
+        logger.info(f"Querying payment history for analysis: {query.model_dump(exclude_none=True)}")
+        payment_history = transaction_service.query(query)
+
+        # Check if transactions found
+        if payment_history.is_empty:
+            logger.info("Query returned no results for analysis")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No transactions found matching query criteria",
+            )
+
+        # Run LangGraph risk analysis agent
+        logger.info(f"Running risk analysis on {payment_history.total_count} transactions")
+        analysis_result = await run_risk_analysis(payment_history.transactions)
+
+        # Log results
+        if analysis_result.error:
+            logger.warning(
+                f"Analysis completed with error (graceful degradation): {analysis_result.error}"
+            )
+        else:
+            logger.info(
+                f"Analysis successful: risk_score={analysis_result.overall_risk_score}, "
+                f"flagged={len(analysis_result.flagged_transactions)}, "
+                f"patterns={len(analysis_result.identified_patterns)}"
+            )
+
+        return analysis_result
+
+    except HTTPException:
+        # Re-raise HTTP exceptions (already formatted)
+        raise
+    except ValueError as e:
+        # Input validation errors
+        logger.warning(f"Analysis validation error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except FileNotFoundError as e:
+        # CSV file not found
+        logger.error(f"CSV file not found: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Transaction data source not available",
+        )
+    except Exception as e:
+        # Unexpected errors (note: LLM failures are handled gracefully within agent)
+        logger.error(f"Analysis execution failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Analysis execution failed: {str(e)}",
         )

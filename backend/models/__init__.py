@@ -10,9 +10,13 @@ This module contains Pydantic models for:
 
 from models.query_params import QueryParameters
 from models.transaction import TransactionRecord, PaymentHistory
+from models.analysis_result import FlaggedTransaction, IdentifiedPattern, AnalysisResult
 
 __all__ = [
     "QueryParameters",
     "TransactionRecord",
     "PaymentHistory",
+    "FlaggedTransaction",
+    "IdentifiedPattern",
+    "AnalysisResult",
 ]
