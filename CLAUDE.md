@@ -156,3 +156,10 @@ When implementing features:
 - Full requirements and features checklist: `README.md`
 - Frontend-specific guidance: `frontend/CLAUDE.md`
 - Mentor: Wee Kiat (Open Innovation Lead, AI, Data & Innovation)
+
+## Active Technologies
+- Python 3.11+ + FastAPI, LangGraph, Grok Kimi 2 LLM client, Pydantic, pandas (CSV processing) (001-payment-history-analysis)
+- CSV file (`transactions_mock_1000_for_participants.csv`) - read-only access (001-payment-history-analysis)
+
+## Recent Changes
+- 001-payment-history-analysis: Added Python 3.11+ + FastAPI, LangGraph, Grok Kimi 2 LLM client, Pydantic, pandas (CSV processing)
