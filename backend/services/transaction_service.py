@@ -39,7 +39,26 @@ class TransactionService:
                 raise FileNotFoundError(f"CSV file not found: {self.csv_path}")
 
             logger.info(f"Loading CSV file: {self.csv_path}")
-            self._df = pd.read_csv(csv_file)
+            
+            # Read CSV with explicit datetime parsing
+            self._df = pd.read_csv(
+                csv_file,
+                parse_dates=['booking_datetime', 'suspicion_determined_datetime', 'str_filed_datetime']
+            )
+
+            # Replace NaN values with None for optional string fields
+            string_columns = [
+                'swift_mt', 'ordering_institution_bic', 
+                'beneficiary_institution_bic', 'swift_f70_purpose',
+                'swift_f71_charges', 'fx_base_ccy', 'fx_quote_ccy',
+                'fx_counterparty', 'suitability_result'
+            ]
+            self._df[string_columns] = self._df[string_columns].replace({pd.NA: None, pd.NaT: None})
+
+            # Handle numeric nullable fields
+            numeric_columns = ['fx_applied_rate', 'fx_market_rate', 'fx_spread_bps']
+            self._df[numeric_columns] = self._df[numeric_columns].replace({pd.NA: None, pd.NaT: None})
+
             logger.info(f"Loaded {len(self._df)} transactions from CSV")
 
         return self._df
@@ -108,21 +127,18 @@ class TransactionService:
         transactions = []
         for _, row in result_df.iterrows():
             try:
-                # Convert row to dict and create TransactionRecord
-                record_dict = row.to_dict()
-                # Handle datetime parsing
-                record_dict["booking_datetime"] = pd.to_datetime(record_dict["booking_datetime"])
-                if pd.notna(record_dict.get("suspicion_determined_datetime")):
-                    record_dict["suspicion_determined_datetime"] = pd.to_datetime(
-                        record_dict["suspicion_determined_datetime"]
-                    )
-                if pd.notna(record_dict.get("str_filed_datetime")):
-                    record_dict["str_filed_datetime"] = pd.to_datetime(record_dict["str_filed_datetime"])
-
+                # Convert row to dict and clean None values
+                record_dict = {
+                    k: (None if pd.isna(v) else v) 
+                    for k, v in row.to_dict().items()
+                }
+                
+                # No need to handle datetime parsing here since it's done in _load_csv
                 transaction = TransactionRecord(**record_dict)
                 transactions.append(transaction)
             except Exception as e:
                 logger.warning(f"Failed to parse transaction {row.get('transaction_id')}: {e}")
+                logger.debug(f"Row data: {record_dict}")  # Add debug logging
                 continue
 
         # Calculate date range

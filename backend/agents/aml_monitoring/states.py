@@ -11,11 +11,12 @@ class RiskAnalysisState(TypedDict):
     """
     State for risk analysis LangGraph workflow.
 
-    Flow: START → format_data → call_llm → parse_response/handle_error → END
+    Flow: START → format_data → call_llm → parse_response/handle_error → validate_rules (optional) → END
     """
 
     # Input
     transactions: list[dict]  # TransactionRecords as dicts
+    rules_data: dict | None  # RulesData as dict (optional, FR-012)
 
     # Intermediate
     formatted_prompt: str | None

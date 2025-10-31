@@ -147,9 +147,14 @@ Retrieve transactions AND perform LLM-powered risk analysis.
 curl -X POST http://localhost:8000/api/payment-history/analyze \
   -H "Content-Type: application/json" \
   -d '{
-    "originator_name": "Jennifer Miller"
+    "query": {
+      "originator_name": "Jennifer Miller"
+    },
+    "rules_data": null
   }'
 ```
+
+**Note**: In Phase 5 (User Story 3), the request format changed to support optional rules validation. Query parameters are now nested under `"query"`, and `"rules_data"` can be provided for regulatory compliance checks (see example below).
 
 **Response**:
 ```json
@@ -197,6 +202,59 @@ When Grok LLM service is unavailable, the API returns transaction data with an e
   "error": "Grok API connection timeout after 30s"
 }
 ```
+
+---
+
+### Analyze with Rules Validation (P3: Regulatory Compliance)
+
+Perform LLM analysis WITH regulatory rules validation.
+
+**Endpoint**: `POST /api/payment-history/analyze`
+
+**Example: Analyze with threshold and jurisdiction rules**
+
+```bash
+curl -X POST http://localhost:8000/api/payment-history/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": {
+      "originator_name": "Jennifer Miller"
+    },
+    "rules_data": {
+      "threshold_rules": [
+        {
+          "rule_id": "THR-001",
+          "rule_name": "Daily cash transaction threshold",
+          "threshold_amount": 10000.00,
+          "currency": "USD",
+          "time_period_days": 1,
+          "violation_severity": "High"
+        }
+      ],
+      "prohibited_jurisdictions": [
+        {
+          "country_code": "KP",
+          "country_name": "North Korea",
+          "risk_level": "Critical",
+          "sanctions_list": "OFAC SDN"
+        }
+      ],
+      "documentation_requirements": [
+        {
+          "requirement_id": "DOC-001",
+          "requirement_name": "EDD required for high-risk customers",
+          "applies_to_product_types": ["wire_transfer"],
+          "required_documents": ["edd_report", "source_of_wealth"],
+          "violation_severity": "High"
+        }
+      ]
+    }
+  }'
+```
+
+**Response**: Same as P2 response, but with additional rule violations merged into `flagged_transactions` and `identified_patterns`. Risk scores are increased if rule violations found.
+
+**Graceful Degradation**: If `rules_data` is `null` or omitted, only LLM analysis is performed (same as P2).
 
 ---
 

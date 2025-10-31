@@ -12,7 +12,8 @@ from langgraph.graph import StateGraph, END
 from agents.aml_monitoring.states import RiskAnalysisState
 from services.llm_client import grok_client
 from models.transaction import TransactionRecord
-from models.analysis_result import AnalysisResult
+from models.analysis_result import AnalysisResult, FlaggedTransaction, IdentifiedPattern
+from models.rules import RulesData
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -191,6 +192,223 @@ def handle_error(state: RiskAnalysisState) -> RiskAnalysisState:
     return state
 
 
+def validate_rules(state: RiskAnalysisState) -> RiskAnalysisState:
+    """
+    Node: Apply regulatory rules validation to transactions (FR-012, FR-013).
+
+    Validates transactions against:
+    - Threshold rules (amount limits)
+    - Prohibited jurisdictions (sanctions, high-risk countries)
+    - Documentation requirements (KYC, EDD, SOW)
+
+    Merges rule violations with LLM analysis results (FR-013).
+    If rules_data is None, skips validation (graceful degradation).
+    """
+    rules_data_dict = state.get("rules_data")
+
+    # Graceful degradation: skip if no rules provided
+    if rules_data_dict is None:
+        logger.info("No rules data provided, skipping rules validation (graceful degradation)")
+        return state
+
+    try:
+        # Parse rules data
+        rules_data = RulesData(**rules_data_dict)
+
+        # Check if rules are empty
+        if rules_data.is_empty:
+            logger.info("Rules data is empty, skipping validation")
+            return state
+
+        logger.info(
+            f"Validating transactions against {len(rules_data.threshold_rules)} threshold rules, "
+            f"{len(rules_data.prohibited_jurisdictions)} jurisdiction rules, "
+            f"{len(rules_data.documentation_requirements)} documentation rules"
+        )
+
+        # Get current analysis result
+        analysis_dict = state.get("analysis_result")
+        if analysis_dict is None:
+            logger.warning("No analysis result to merge rules with, skipping validation")
+            return state
+
+        analysis_result = AnalysisResult(**analysis_dict)
+        transactions = state["transactions"]
+
+        # Track rule violations
+        rule_violations: list[FlaggedTransaction] = []
+        rule_patterns: list[IdentifiedPattern] = []
+
+        # 1. Check threshold rules
+        for rule in rules_data.threshold_rules:
+            violated_tx_ids = []
+            for tx in transactions:
+                if (
+                    tx.get("currency") == rule.currency
+                    and float(tx.get("amount", 0)) > float(rule.threshold_amount)
+                ):
+                    violated_tx_ids.append(tx["transaction_id"])
+                    rule_violations.append(
+                        FlaggedTransaction(
+                            transaction_id=tx["transaction_id"],
+                            reason=f"Exceeds {rule.rule_name}: {tx.get('amount')} {rule.currency} > {rule.threshold_amount} {rule.currency}",
+                            risk_level=rule.violation_severity,
+                        )
+                    )
+
+            if violated_tx_ids:
+                rule_patterns.append(
+                    IdentifiedPattern(
+                        pattern_type="threshold_violation",
+                        description=f"Threshold rule violation: {rule.rule_name}",
+                        affected_transactions=violated_tx_ids,
+                        severity=rule.violation_severity,
+                    )
+                )
+
+        # 2. Check prohibited jurisdictions
+        prohibited_country_codes = {j.country_code for j in rules_data.prohibited_jurisdictions}
+        if prohibited_country_codes:
+            violated_tx_ids = []
+            for tx in transactions:
+                originator_country = tx.get("originator_country")
+                beneficiary_country = tx.get("beneficiary_country")
+
+                if originator_country in prohibited_country_codes:
+                    violated_tx_ids.append(tx["transaction_id"])
+                    jurisdiction = next(
+                        (j for j in rules_data.prohibited_jurisdictions if j.country_code == originator_country),
+                        None,
+                    )
+                    rule_violations.append(
+                        FlaggedTransaction(
+                            transaction_id=tx["transaction_id"],
+                            reason=f"Originator from prohibited jurisdiction: {jurisdiction.country_name if jurisdiction else originator_country}",
+                            risk_level=jurisdiction.risk_level if jurisdiction else "High",
+                        )
+                    )
+
+                if beneficiary_country in prohibited_country_codes:
+                    violated_tx_ids.append(tx["transaction_id"])
+                    jurisdiction = next(
+                        (j for j in rules_data.prohibited_jurisdictions if j.country_code == beneficiary_country),
+                        None,
+                    )
+                    rule_violations.append(
+                        FlaggedTransaction(
+                            transaction_id=tx["transaction_id"],
+                            reason=f"Beneficiary in prohibited jurisdiction: {jurisdiction.country_name if jurisdiction else beneficiary_country}",
+                            risk_level=jurisdiction.risk_level if jurisdiction else "High",
+                        )
+                    )
+
+            if violated_tx_ids:
+                rule_patterns.append(
+                    IdentifiedPattern(
+                        pattern_type="prohibited_jurisdiction",
+                        description="Transactions involving prohibited or high-risk jurisdictions",
+                        affected_transactions=list(set(violated_tx_ids)),  # Deduplicate
+                        severity="High",
+                    )
+                )
+
+        # 3. Check documentation requirements
+        for req in rules_data.documentation_requirements:
+            violated_tx_ids = []
+            for tx in transactions:
+                product_type = tx.get("product_type")
+                if product_type in req.applies_to_product_types:
+                    # Check if required documentation is present
+                    missing_docs = []
+                    if "edd_report" in req.required_documents and not tx.get("edd_performed"):
+                        missing_docs.append("EDD")
+                    if "source_of_wealth" in req.required_documents and not tx.get("sow_documented"):
+                        missing_docs.append("Source of Wealth")
+
+                    if missing_docs:
+                        violated_tx_ids.append(tx["transaction_id"])
+                        rule_violations.append(
+                            FlaggedTransaction(
+                                transaction_id=tx["transaction_id"],
+                                reason=f"Missing required documentation: {', '.join(missing_docs)} ({req.requirement_name})",
+                                risk_level=req.violation_severity,
+                            )
+                        )
+
+            if violated_tx_ids:
+                rule_patterns.append(
+                    IdentifiedPattern(
+                        pattern_type="documentation_violation",
+                        description=f"Documentation requirement violation: {req.requirement_name}",
+                        affected_transactions=violated_tx_ids,
+                        severity=req.violation_severity,
+                    )
+                )
+
+        # Merge rule violations with LLM analysis (FR-013)
+        logger.info(
+            f"Rules validation found {len(rule_violations)} violations and {len(rule_patterns)} patterns"
+        )
+
+        # Append rule violations to flagged transactions
+        merged_flagged = analysis_result.flagged_transactions + rule_violations
+
+        # Append rule patterns to identified patterns
+        merged_patterns = analysis_result.identified_patterns + rule_patterns
+
+        # Update risk score if rule violations found
+        updated_risk_score = analysis_result.overall_risk_score
+        if rule_violations and updated_risk_score is not None:
+            # Increase risk score by 10% for each high/critical rule violation
+            high_severity_count = sum(
+                1 for v in rule_violations if v.risk_level in ["High", "Critical"]
+            )
+            score_increase = min(high_severity_count * 0.5, 2.0)  # Cap at +2.0
+            updated_risk_score = min(updated_risk_score + score_increase, 10.0)
+            logger.info(
+                f"Risk score increased from {analysis_result.overall_risk_score} to {updated_risk_score} due to rule violations"
+            )
+
+        # Update risk category if needed
+        updated_risk_category = analysis_result.risk_category
+        if updated_risk_score is not None:
+            if updated_risk_score >= 8.0:
+                updated_risk_category = "Critical"
+            elif updated_risk_score >= 6.0:
+                updated_risk_category = "High"
+            elif updated_risk_score >= 4.0:
+                updated_risk_category = "Medium"
+            else:
+                updated_risk_category = "Low"
+
+        # Create updated analysis result
+        updated_result = AnalysisResult(
+            overall_risk_score=updated_risk_score,
+            risk_category=updated_risk_category,
+            flagged_transactions=merged_flagged,
+            identified_patterns=merged_patterns,
+            narrative_summary=analysis_result.narrative_summary
+            + (
+                f"\n\nRegulatory Rules Validation: {len(rule_violations)} rule violations detected across {len(rule_patterns)} violation types."
+                if rule_violations
+                else "\n\nRegulatory Rules Validation: No rule violations detected."
+            ),
+            analyzed_transaction_count=analysis_result.analyzed_transaction_count,
+            analysis_timestamp=analysis_result.analysis_timestamp,
+            error=analysis_result.error,
+        )
+
+        state["analysis_result"] = updated_result.model_dump()
+        logger.info("Rules validation complete, results merged with LLM analysis")
+
+    except Exception as e:
+        logger.error(f"Rules validation failed: {e}", exc_info=True)
+        # Don't fail entire workflow, just log and continue
+        logger.warning("Continuing without rules validation due to error")
+
+    return state
+
+
 # ============================================================================
 # Conditional Routing
 # ============================================================================
@@ -210,11 +428,16 @@ def route_after_llm(state: RiskAnalysisState) -> str:
 
 def route_after_parse(state: RiskAnalysisState) -> str:
     """
-    Conditional edge: Route to END or handle_error based on parse success.
+    Conditional edge: Route to validate_rules, END, or handle_error based on parse success.
     """
     if state.get("analysis_result") is not None and state.get("error") is None:
-        logger.debug("Routing to END (success)")
-        return END
+        # Check if rules data provided
+        if state.get("rules_data") is not None:
+            logger.debug("Routing to validate_rules node")
+            return "validate_rules"
+        else:
+            logger.debug("Routing to END (no rules to validate)")
+            return END
     else:
         logger.debug("Routing to handle_error node")
         return "handle_error"
@@ -232,7 +455,8 @@ def create_risk_analysis_graph() -> StateGraph:
     Flow:
     START → format_data → call_llm → [conditional]
                                      ├─ parse_response → [conditional]
-                                     │                   ├─ END (success)
+                                     │                   ├─ validate_rules → END (if rules provided)
+                                     │                   ├─ END (no rules)
                                      │                   └─ handle_error → END
                                      └─ handle_error → END
     """
@@ -243,6 +467,7 @@ def create_risk_analysis_graph() -> StateGraph:
     workflow.add_node("call_llm", call_llm)
     workflow.add_node("parse_response", parse_response)
     workflow.add_node("handle_error", handle_error)
+    workflow.add_node("validate_rules", validate_rules)
 
     # Set entry point
     workflow.set_entry_point("format_data")
@@ -252,8 +477,9 @@ def create_risk_analysis_graph() -> StateGraph:
     workflow.add_conditional_edges("call_llm", route_after_llm)
     workflow.add_conditional_edges("parse_response", route_after_parse)
     workflow.add_edge("handle_error", END)
+    workflow.add_edge("validate_rules", END)
 
-    logger.debug("Risk analysis StateGraph created")
+    logger.debug("Risk analysis StateGraph created with rules validation")
     return workflow
 
 
@@ -262,7 +488,9 @@ def create_risk_analysis_graph() -> StateGraph:
 # ============================================================================
 
 
-async def run_risk_analysis(transactions: list[TransactionRecord]) -> AnalysisResult:
+async def run_risk_analysis(
+    transactions: list[TransactionRecord], rules_data: RulesData | None = None
+) -> AnalysisResult:
     """
     Execute risk analysis workflow on transaction list.
 
@@ -270,6 +498,7 @@ async def run_risk_analysis(transactions: list[TransactionRecord]) -> AnalysisRe
 
     Args:
         transactions: List of TransactionRecord objects to analyze
+        rules_data: Optional regulatory rules for validation (FR-012). If None, rules validation is skipped.
 
     Returns:
         AnalysisResult with risk scores, flagged transactions, patterns, and summary
@@ -280,14 +509,21 @@ async def run_risk_analysis(transactions: list[TransactionRecord]) -> AnalysisRe
     if not transactions:
         raise ValueError("Cannot analyze empty transaction list")
 
-    logger.info(f"Starting risk analysis workflow for {len(transactions)} transactions")
+    logger.info(
+        f"Starting risk analysis workflow for {len(transactions)} transactions"
+        + (f" with rules validation" if rules_data else " (no rules validation)")
+    )
 
     # Convert TransactionRecords to dicts for LLM
     transaction_dicts = [t.model_dump(mode="json") for t in transactions]
 
+    # Convert rules_data to dict if provided
+    rules_dict = rules_data.model_dump() if rules_data else None
+
     # Initialize state
     initial_state: RiskAnalysisState = {
         "transactions": transaction_dicts,
+        "rules_data": rules_dict,
         "formatted_prompt": None,
         "llm_raw_response": None,
         "analysis_result": None,

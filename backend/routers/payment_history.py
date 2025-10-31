@@ -6,10 +6,12 @@ Provides endpoints for querying transaction data and performing risk analysis.
 
 import logging
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
 
 from models.query_params import QueryParameters
 from models.transaction import PaymentHistory
 from models.analysis_result import AnalysisResult
+from models.rules import RulesData
 from services.transaction_service import transaction_service
 from agents.aml_monitoring.risk_analyzer import run_risk_analysis
 
@@ -17,6 +19,16 @@ from agents.aml_monitoring.risk_analyzer import run_risk_analysis
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+# Request model for analysis endpoint
+class AnalyzeRequest(BaseModel):
+    """Request model for payment history analysis with optional rules."""
+
+    query: QueryParameters = Field(..., description="Search criteria for transactions")
+    rules_data: RulesData | None = Field(
+        None, description="Optional regulatory rules for validation (FR-012, FR-013)"
+    )
 
 
 @router.post("/payment-history/query", response_model=PaymentHistory)
@@ -88,15 +100,16 @@ async def query_payment_history(query: QueryParameters) -> PaymentHistory:
 
 
 @router.post("/payment-history/analyze", response_model=AnalysisResult)
-async def analyze_payment_history(query: QueryParameters) -> AnalysisResult:
+async def analyze_payment_history(request: AnalyzeRequest) -> AnalysisResult:
     """
     Query payment history and perform LLM-powered risk analysis.
 
     Combines transaction retrieval with AI pattern detection and risk scoring.
     Uses LangGraph workflow with graceful degradation (FR-018).
+    Supports optional rules validation (FR-012, FR-013).
 
     Args:
-        query: Search criteria (at least one field required)
+        request: Analysis request with query parameters and optional rules_data
 
     Returns:
         AnalysisResult with risk scores, flagged transactions, and patterns
@@ -107,6 +120,9 @@ async def analyze_payment_history(query: QueryParameters) -> AnalysisResult:
         HTTPException 500: If query or analysis fails
     """
     try:
+        query = request.query
+        rules_data = request.rules_data
+
         # Validate at least one filter provided
         if not query.has_filters:
             raise HTTPException(
@@ -115,7 +131,10 @@ async def analyze_payment_history(query: QueryParameters) -> AnalysisResult:
             )
 
         # Execute query to retrieve transactions
-        logger.info(f"Querying payment history for analysis: {query.model_dump(exclude_none=True)}")
+        logger.info(
+            f"Querying payment history for analysis: {query.model_dump(exclude_none=True)}"
+            + (f" with rules validation" if rules_data else "")
+        )
         payment_history = transaction_service.query(query)
 
         # Check if transactions found
@@ -126,9 +145,16 @@ async def analyze_payment_history(query: QueryParameters) -> AnalysisResult:
                 detail="No transactions found matching query criteria",
             )
 
-        # Run LangGraph risk analysis agent
-        logger.info(f"Running risk analysis on {payment_history.total_count} transactions")
-        analysis_result = await run_risk_analysis(payment_history.transactions)
+        # Run LangGraph risk analysis agent with optional rules
+        logger.info(
+            f"Running risk analysis on {payment_history.total_count} transactions"
+            + (f" with {len(rules_data.threshold_rules) if rules_data else 0} threshold rules, "
+               f"{len(rules_data.prohibited_jurisdictions) if rules_data else 0} jurisdiction rules"
+               if rules_data else " (no rules validation)")
+        )
+        analysis_result = await run_risk_analysis(
+            payment_history.transactions, rules_data=rules_data
+        )
 
         # Log results
         if analysis_result.error:
