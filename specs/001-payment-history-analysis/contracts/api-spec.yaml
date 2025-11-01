@@ -1,0 +1,377 @@
+openapi: 3.1.0
+info:
+  title: Payment History Analysis API
+  description: |
+    AML compliance tool for querying payment history and performing LLM-powered risk analysis.
+
+    **Features:**
+    - Query transactions by originator/beneficiary identifiers (OR logic)
+    - AI-powered pattern detection via Grok Kimi 2
+    - Structured JSON output with risk scores and flagged transactions
+    - Graceful degradation when LLM unavailable
+  version: 1.0.0
+  contact:
+    name: AML Compliance Team
+
+servers:
+  - url: http://localhost:8000
+    description: Development server
+  - url: https://api.example.com
+    description: Production server (TBD)
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Verify API is running and responsive (<200ms target)
+      operationId: healthCheck
+      tags:
+        - System
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/payment-history/query:
+    post:
+      summary: Query payment history
+      description: |
+        Retrieve transactions matching search criteria (P1 functionality).
+        Uses OR logic: returns transactions matching ANY provided identifier.
+        Results are deduplicated by transaction_id.
+      operationId: queryPaymentHistory
+      tags:
+        - Payment History
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryParameters'
+      responses:
+        '200':
+          description: Successfully retrieved payment history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentHistory'
+        '400':
+          description: Invalid query parameters (no filters provided)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error (malformed request)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/payment-history/analyze:
+    post:
+      summary: Analyze payment history with AI
+      description: |
+        Query transactions AND perform LLM-powered risk analysis (P2 functionality).
+        Combines retrieval + analysis in single request.
+        Returns structured JSON with risk scores, flagged transactions, and patterns.
+        Gracefully degrades if LLM unavailable (returns data without analysis).
+      operationId: analyzePaymentHistory
+      tags:
+        - Payment History
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryParameters'
+      responses:
+        '200':
+          description: Successfully analyzed payment history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResult'
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '503':
+          description: Service degraded (LLM unavailable, returns data without analysis)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisResult'
+
+components:
+  schemas:
+    QueryParameters:
+      type: object
+      description: Search criteria for payment history (OR logic)
+      properties:
+        originator_name:
+          type: string
+          nullable: true
+          description: Originator name (case-insensitive exact match)
+          example: "Jennifer Parker"
+        originator_account:
+          type: string
+          nullable: true
+          description: Originator account number (case-insensitive)
+          example: "GB39OOLA52427580832378"
+        beneficiary_name:
+          type: string
+          nullable: true
+          description: Beneficiary name (case-insensitive exact match)
+          example: "George Brown"
+        beneficiary_account:
+          type: string
+          nullable: true
+          description: Beneficiary account number (case-insensitive)
+          example: "GB88KUDJ48147748190437"
+      example:
+        originator_name: "Jennifer Parker"
+        beneficiary_account: "GB88KUDJ48147748190437"
+
+    TransactionRecord:
+      type: object
+      description: Complete transaction record (47 fields from CSV)
+      required:
+        - transaction_id
+        - booking_datetime
+        - amount
+        - currency
+        - originator_name
+        - beneficiary_name
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        booking_datetime:
+          type: string
+          format: date-time
+        value_date:
+          type: string
+        booking_jurisdiction:
+          type: string
+          enum: [HK, SG, CH]
+        regulator:
+          type: string
+          enum: ["HKMA/SFC", "MAS", "FINMA"]
+        amount:
+          type: number
+          format: decimal
+          minimum: 0
+        currency:
+          type: string
+          example: "USD"
+        channel:
+          type: string
+          example: "SWIFT"
+        product_type:
+          type: string
+          example: "wire_transfer"
+        originator_name:
+          type: string
+        originator_account:
+          type: string
+        originator_country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+        beneficiary_name:
+          type: string
+        beneficiary_account:
+          type: string
+        beneficiary_country:
+          type: string
+          pattern: "^[A-Z]{2}$"
+        customer_risk_rating:
+          type: string
+          enum: [Low, Medium, High]
+        customer_is_pep:
+          type: boolean
+        sanctions_screening:
+          type: string
+          enum: [none, potential, confirmed]
+        # ... (abbreviated for brevity, full 47 fields in implementation)
+
+    PaymentHistory:
+      type: object
+      description: Collection of matching transactions
+      required:
+        - transactions
+        - total_count
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionRecord'
+        total_count:
+          type: integer
+          minimum: 0
+          description: Number of unique transactions returned
+        date_range:
+          type: object
+          properties:
+            earliest:
+              type: string
+              format: date-time
+              nullable: true
+            latest:
+              type: string
+              format: date-time
+              nullable: true
+
+    FlaggedTransaction:
+      type: object
+      required:
+        - transaction_id
+        - reason
+        - risk_level
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          description: Why this transaction was flagged
+          example: "Round-number amount to high-risk jurisdiction"
+        risk_level:
+          type: string
+          enum: [Low, Medium, High, Critical]
+
+    IdentifiedPattern:
+      type: object
+      required:
+        - pattern_type
+        - description
+        - affected_transactions
+        - severity
+      properties:
+        pattern_type:
+          type: string
+          description: Pattern category
+          enum: [volume_spike, round_amounts, high_risk_jurisdiction, similar_names, pep_involvement, sanctions_hit, structuring, unusual_frequency]
+        description:
+          type: string
+          description: Human-readable pattern explanation
+        affected_transactions:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Transaction IDs exhibiting this pattern
+        severity:
+          type: string
+          enum: [Low, Medium, High]
+
+    AnalysisResult:
+      type: object
+      description: Structured LLM analysis output (FR-014)
+      required:
+        - narrative_summary
+        - analyzed_transaction_count
+        - analysis_timestamp
+      properties:
+        overall_risk_score:
+          type: number
+          format: float
+          nullable: true
+          minimum: 0
+          maximum: 10
+          description: Numeric risk score (null if analysis failed)
+        risk_category:
+          type: string
+          nullable: true
+          enum: [Low, Medium, High, Critical]
+        flagged_transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FlaggedTransaction'
+          default: []
+        identified_patterns:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentifiedPattern'
+          default: []
+        narrative_summary:
+          type: string
+          description: Human-readable summary of findings
+        analyzed_transaction_count:
+          type: integer
+          minimum: 0
+        analysis_timestamp:
+          type: string
+          format: date-time
+        error:
+          type: string
+          nullable: true
+          description: Error message if LLM unavailable (graceful degradation)
+          example: "LLM service temporarily unavailable. Returning transaction data without analysis."
+      example:
+        overall_risk_score: 7.5
+        risk_category: "High"
+        flagged_transactions:
+          - transaction_id: "ad66338d-b17f-47fc-a966-1b4395351b41"
+            reason: "PEP involvement with potential sanctions screening hit"
+            risk_level: "High"
+        identified_patterns:
+          - pattern_type: "round_amounts"
+            description: "Multiple round-number transactions suggesting structuring"
+            affected_transactions: ["ad66338d-b17f-47fc-a966-1b4395351b41"]
+            severity: "High"
+        narrative_summary: "Analysis detected potential structuring behavior with PEP involvement."
+        analyzed_transaction_count: 25
+        analysis_timestamp: "2025-11-01T12:00:00Z"
+        error: null
+
+    Error:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Error message
+          example: "At least one search parameter must be provided"
+
+    ValidationError:
+      type: object
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string
+
+tags:
+  - name: System
+    description: Health checks and system status
+  - name: Payment History
+    description: Transaction querying and risk analysis

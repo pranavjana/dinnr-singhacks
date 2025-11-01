@@ -1,0 +1,22 @@
+# FastAPI and server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# Data validation and settings
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Data processing
+pandas==2.2.0
+
+# LangGraph for agent orchestration
+langgraph==0.0.25
+
+# HTTP client for Grok API
+httpx==0.25.1
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+
+numpy==1.26.4
